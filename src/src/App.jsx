@@ -5,13 +5,14 @@ import {
   Users, CheckCircle2, LayoutDashboard, FileText, Wand2,
   ChevronRight, ArrowUpRight, Send, AlertTriangle, Leaf,
   Phone, Mail, MessageSquare, Award, Lightbulb, Ghost, Sparkles,
-  Factory, ShieldAlert, BarChart3, Fingerprint, Cloud
+  Factory, ShieldAlert, BarChart3, Fingerprint, Cloud, Volume2, 
+  Play, Calendar, Rocket
 } from 'lucide-react';
 
 /**
- * B.CJ Sovereign Master Hub v45.0
+ * B.CJ Sovereign Master Hub v46.0 (Gemini Enhanced)
  * 🏛️ ศูนย์บัญชาการมหาอำนาจการจัดการ (Management Engineering & AI)
- * รองรับระบบ Strike Mutation, AI Strategic Analysis และ Domain Control
+ * เพิ่มระบบ AI Headline Gen, TTS Briefing และ Campaign Planning
  */
 
 const apiKey = ""; // Gemini API Key provided by environment
@@ -29,11 +30,12 @@ const App = () => {
   });
   const [systemStatus, setSystemStatus] = useState('INITIALIZING');
   const [logs, setLogs] = useState([]);
+  const [audioUrl, setAudioUrl] = useState(null);
+  const [campaignPlan, setCampaignPlan] = useState(null);
 
   // --- [INITIALIZATION] ---
   useEffect(() => {
     const initSystem = async () => {
-      // Inject Supabase SDK
       if (!window.supabase) {
         const script = document.createElement('script');
         script.src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2";
@@ -60,7 +62,6 @@ const App = () => {
     initSystem();
   }, []);
 
-  // --- [UTILITIES] ---
   const addLog = (msg) => {
     setLogs(prev => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev].slice(0, 5));
   };
@@ -74,14 +75,133 @@ const App = () => {
     }
   };
 
-  // --- [AI STRATEGY NODE] ---
+  // --- [UTILITY: EXPONENTIAL BACKOFF FETCH] ---
+  const fetchWithRetry = async (url, options, retries = 5) => {
+    for (let i = 0; i < retries; i++) {
+      try {
+        const res = await fetch(url, options);
+        if (res.ok) return res;
+        if (res.status !== 429 && res.status < 500) break;
+      } catch (e) {}
+      await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
+    }
+    throw new Error("API call failed after retries");
+  };
+
+  // --- [AI: MAGIC HEADLINE GENERATOR] ---
+  const generateMagicHeadline = async () => {
+    setIsAiLoading(true);
+    const prompt = "จงสร้าง 1 พาดหัวที่ทรงพลังและ 1 ข้อความปุ่ม CTA สำหรับบริการปรึกษา ISO 9001/14001/22301 โดยเน้นกลุ่มเป้าหมายนักธุรกิจมหาอำนาจในไทย ตอบกลับในรูปแบบ JSON: { \"headline\": \"...\", \"cta\": \"...\" }";
+    
+    try {
+      const res = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { responseMimeType: "application/json" }
+        })
+      });
+      const data = await res.json();
+      const result = JSON.parse(data.candidates[0].content.parts[0].text);
+      setStrikeInput(result);
+      showToast("Magic Headline Generated!");
+    } catch (err) {
+      addLog("Headline Gen failed: " + err.message);
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  // --- [AI: STRATEGY AUDIO BRIEF (TTS)] ---
+  const generateAudioBrief = async () => {
+    if (!aiAnalysis) return;
+    setIsAiLoading(true);
+    try {
+      const res = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: `Say in a professional, authoritative tone: นี่คือสรุปกลยุทธ์ของคุณครับท่าน CEO. ${aiAnalysis}` }] }],
+          generationConfig: { 
+            responseModalities: ["AUDIO"],
+            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Puck" } } }
+          }
+        })
+      });
+      const data = await res.json();
+      const pcmData = data.candidates[0].content.parts[0].inlineData.data;
+      
+      // Convert PCM16 to WAV for playback
+      const wavBlob = pcmToWav(pcmData, 24000); // 24kHz default
+      const url = URL.createObjectURL(wavBlob);
+      setAudioUrl(url);
+      showToast("Audio Briefing Ready!");
+    } catch (err) {
+      addLog("TTS failed: " + err.message);
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  const pcmToWav = (base64Pcm, sampleRate) => {
+    const pcmBuffer = Uint8Array.from(atob(base64Pcm), c => c.charCodeAt(0)).buffer;
+    const wavHeader = new ArrayBuffer(44);
+    const view = new DataView(wavHeader);
+    const pcmLength = pcmBuffer.byteLength;
+
+    view.setUint32(0, 0x46464952, true); // "RIFF"
+    view.setUint32(4, 36 + pcmLength, true);
+    view.setUint32(8, 0x45564157, true); // "WAVE"
+    view.setUint32(12, 0x20746d66, true); // "fmt "
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true); // PCM
+    view.setUint16(22, 1, true); // Mono
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    view.setUint32(36, 0x61746164, true); // "data"
+    view.setUint32(40, pcmLength, true);
+
+    return new Blob([wavHeader, pcmBuffer], { type: 'audio/wav' });
+  };
+
+  // --- [AI: CAMPAIGN ROADMAP PLANNER] ---
+  const generateCampaignPlan = async () => {
+    setIsAiLoading(true);
+    const prompt = `จากพาดหัว: "${strikeInput.headline}" จงสร้างแผนแคมเปญการจัดการแบบมหาอำนาจในรูปแบบ JSON: 
+    { "roadmap": [ { "phase": "...", "tasks": ["..."] } ], "social_hooks": ["..."] }`;
+    
+    try {
+      const res = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { responseMimeType: "application/json" }
+        })
+      });
+      const data = await res.json();
+      const result = JSON.parse(data.candidates[0].content.parts[0].text);
+      setCampaignPlan(result);
+      setActiveTab('campaign');
+      showToast("Campaign Plan Ready!");
+    } catch (err) {
+      addLog("Campaign Planning failed: " + err.message);
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  // --- [AI STRATEGY ANALYSIS] ---
   const analyzeStrikePsychology = async (headline, cta) => {
     setIsAiLoading(true);
-    const systemPrompt = `คุณคือ Sovereign AI Marketing Strategist. จงวิเคราะห์ข้อความโฆษณาในเชิงจิตวิทยาและทฤษฎี Cognitive Bias (Loss Aversion, Social Proof, Pride). ให้คำแนะนำสั้นๆ ว่าจะทำให้ข้อความนี้ "ทรงพลัง" ขึ้นได้อย่างไร`;
+    const systemPrompt = `คุณคือ Sovereign AI Marketing Strategist. จงวิเคราะห์ข้อความโฆษณาในเชิงจิตวิทยาและทฤษฎี Cognitive Bias. ให้คำแนะนำสั้นๆ ว่าจะทำให้ข้อความนี้ "ทรงพลัง" ขึ้นได้อย่างไร`;
     const userPrompt = `พิจารณาข้อความนี้: Headline: "${headline}" | CTA: "${cta}"`;
 
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+      const res = await fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -89,11 +209,10 @@ const App = () => {
           systemInstruction: { parts: [{ text: systemPrompt }] }
         })
       });
-      const data = await response.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      setAiAnalysis(text || "AI ไม่สามารถประมวลผลได้ในขณะนี้");
+      const data = await res.json();
+      setAiAnalysis(data.candidates[0].content.parts[0].text);
     } catch (err) {
-      setAiAnalysis("การเชื่อมต่อ AI ขัดข้อง กรุณาตรวจสอบ API Key");
+      setAiAnalysis("การวิเคราะห์ขัดข้อง");
     } finally {
       setIsAiLoading(false);
     }
@@ -102,23 +221,16 @@ const App = () => {
   // --- [COMMAND EXECUTION] ---
   const executeGlobalStrike = async () => {
     if (!sbClient) return;
-    
     addLog("Initiating Global Strike Mutation...");
-    
     try {
-      // 1. ส่งคำสั่ง Mutation ไปยัง Supabase (Real-time Replication)
       const { error } = await sbClient.from('authority_rules').insert({
-        iso_standard: 'STRATEGY_STRIKE_V45',
+        iso_standard: 'STRATEGY_STRIKE_V46',
         mutated_headline_thai: strikeInput.headline,
         mutated_cta_thai: strikeInput.cta,
         is_active: true
       });
-
       if (error) throw error;
-
-      // 2. วิเคราะห์ผลกระทบด้วย AI
       analyzeStrikePsychology(strikeInput.headline, strikeInput.cta);
-      
       showToast("MUTATION DEPLOYED TO ALL DOMAINS");
       addLog("Strike successful: Assets mutated across btc-consultant.com");
     } catch (err) {
@@ -129,7 +241,7 @@ const App = () => {
   return (
     <div className="flex h-screen bg-[#F8FAFC] text-[#0F172A] font-sans overflow-hidden">
       
-      {/* 1. SIDEBAR - SOVEREIGN CONTROL */}
+      {/* 1. SIDEBAR */}
       <aside className="w-[280px] bg-[#0D1F3C] flex flex-col shrink-0 z-50 shadow-2xl">
         <div className="p-8 pb-4">
           <div className="flex items-center gap-3 mb-8">
@@ -141,19 +253,16 @@ const App = () => {
             <p className="text-[11px] font-bold text-white uppercase tracking-tight">btc-consultant.com</p>
           </div>
         </div>
-
         <nav className="flex-1 px-4 space-y-1 mt-6 overflow-y-auto no-scrollbar">
           <div className="text-[9px] font-black text-white/30 uppercase tracking-[0.2em] px-6 mb-2">Operations</div>
           <NavBtn id="strike" label="Strike Engine" icon={<Target size={18}/>} active={activeTab} onClick={setActiveTab} color="text-pink-400" />
+          <NavBtn id="campaign" label="Campaign Roadmap" icon={<Calendar size={18}/>} active={activeTab} onClick={setActiveTab} color="text-emerald-400" />
           <NavBtn id="ai-lab" label="AI Strategy Lab" icon={<Brain size={18}/>} active={activeTab} onClick={setActiveTab} color="text-blue-300" />
-          
           <div className="text-[9px] font-black text-white/30 uppercase tracking-[0.2em] px-6 mt-8 mb-2">Infrastructure</div>
           <NavBtn id="domains" label="Domain Sovereignty" icon={<Globe size={18}/>} active={activeTab} onClick={setActiveTab} />
           <NavBtn id="cloud" label="Cloud Sync" icon={<Cloud size={18}/>} active={activeTab} onClick={setActiveTab} />
-          <NavBtn id="legacy" label="Legacy Assets" icon={<Database size={18}/>} active={activeTab} onClick={setActiveTab} color="text-amber-400" />
         </nav>
-
-        <div className="p-8 border-t border-white/5 bg-black/20">
+        <div className="p-8 border-t border-white/5 bg-black/20 mt-auto">
           <div className="flex items-center gap-3 mb-4">
              <div className={`w-2 h-2 rounded-full ${systemStatus === 'OPERATIONAL' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></div>
              <span className="text-[10px] font-black text-white/60 uppercase tracking-widest">{systemStatus}</span>
@@ -168,14 +277,12 @@ const App = () => {
 
       {/* 2. MAIN VIEWPORT */}
       <main className="flex-1 overflow-y-auto relative">
-        
-        {/* HEADER HUD */}
         <header className="sticky top-0 bg-white/80 backdrop-blur-xl px-10 py-5 z-40 border-b border-slate-200 flex justify-between items-center shadow-sm">
            <div className="flex items-center gap-4">
               <div className="w-10 h-10 bg-[#0D1F3C] rounded-2xl flex items-center justify-center text-white shadow-xl shadow-blue-100"><Cpu size={20}/></div>
               <div>
                 <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Central Intelligence Hub</p>
-                <h3 className="text-sm font-black text-slate-900 italic tracking-tight uppercase">BTC Consultant Sovereign OS v45.0</h3>
+                <h3 className="text-sm font-black text-slate-900 italic tracking-tight uppercase">BTC Consultant Sovereign OS v46.0</h3>
               </div>
            </div>
            <div className="flex items-center gap-4">
@@ -195,149 +302,129 @@ const App = () => {
                 <div className="flex justify-between items-end border-b border-slate-200 pb-8">
                     <div>
                         <h2 className="text-5xl font-black tracking-tighter text-slate-900 italic uppercase leading-none">Strike Mutation Engine</h2>
-                        <p className="text-slate-500 text-lg font-medium mt-3 italic max-w-2xl">"บงการหัวใจของเว็บไซต์และระบบ SaaS ในเครือ BTC ทั้งหมดผ่านการส่งสัญญาณ Real-time Mutation เพียงครั้งเดียว"</p>
                     </div>
+                    <button 
+                      onClick={generateMagicHeadline}
+                      className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center gap-3 shadow-xl hover:scale-105 transition"
+                    >
+                      <Sparkles size={16}/> ✨ Magic Headline Gen
+                    </button>
                 </div>
-
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
                     <div className="lg:col-span-5 space-y-8">
                         <div className="bg-white rounded-[3rem] p-10 shadow-xl border border-slate-100 space-y-8 relative overflow-hidden group">
-                            <div className="absolute top-0 right-0 p-8 opacity-0 group-hover:opacity-10 transition-opacity"><Target size={120} className="text-pink-600"/></div>
-                            
                             <div className="space-y-6 relative z-10">
                                 <div className="space-y-3">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] flex items-center gap-2">
-                                      <FileText size={14} className="text-pink-500" /> Mutate Headline (TH)
-                                    </label>
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Mutate Headline</label>
                                     <textarea 
                                       value={strikeInput.headline}
                                       onChange={(e) => setStrikeInput({...strikeInput, headline: e.target.value})}
-                                      className="w-full bg-slate-50 border border-slate-100 rounded-3xl p-6 text-sm font-bold outline-none focus:border-pink-500 transition-all h-32 leading-relaxed shadow-inner" 
-                                      placeholder="ใส่พาดหัวสะกดจิตที่นี่..."
+                                      className="w-full bg-slate-50 border border-slate-100 rounded-3xl p-6 text-sm font-bold outline-none focus:border-pink-500 h-32" 
                                     />
                                 </div>
                                 <div className="space-y-3">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] flex items-center gap-2">
-                                      <Zap size={14} className="text-pink-500" /> Mutate CTA Button (TH)
-                                    </label>
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Mutate CTA</label>
                                     <input 
                                       value={strikeInput.cta}
                                       onChange={(e) => setStrikeInput({...strikeInput, cta: e.target.value})}
-                                      className="w-full bg-slate-50 border border-slate-100 rounded-3xl p-6 text-sm font-bold outline-none focus:border-pink-500 shadow-inner" 
-                                      placeholder="ข้อความบนปุ่ม..."
+                                      className="w-full bg-slate-50 border border-slate-100 rounded-3xl p-6 text-sm font-bold outline-none focus:border-pink-500" 
                                     />
                                 </div>
                             </div>
-
-                            <button 
-                              onClick={executeGlobalStrike}
-                              disabled={isAiLoading || !sbClient}
-                              className={`w-full py-7 rounded-[2rem] font-black text-sm uppercase tracking-[0.3em] shadow-3xl transition-all flex items-center justify-center gap-4 ${isAiLoading ? 'bg-slate-400' : 'bg-[#0D1F3C] text-white hover:scale-[1.02] active:scale-95'}`}
-                            >
-                                {isAiLoading ? <RefreshCw className="animate-spin" size={20}/> : <Zap size={20} className="fill-white"/>}
-                                {isAiLoading ? 'Analyzing Strike...' : 'Execute Global Strike'}
-                            </button>
-                        </div>
-                        
-                        <div className="bg-amber-50 border border-amber-100 rounded-[2rem] p-6 flex gap-4">
-                           <AlertTriangle className="text-amber-500 shrink-0" size={24} />
-                           <p className="text-[11px] font-bold text-amber-800 italic leading-relaxed">
-                             "คำเตือน: การ Execute Strike จะเปลี่ยนหน้าตาเว็บไซต์ www.btc-consultant.com ทันทีสำหรับผู้ใช้งานทุกคนที่กำลังออนไลน์"
-                           </p>
+                            <div className="grid grid-cols-2 gap-4">
+                              <button onClick={executeGlobalStrike} className="bg-[#0D1F3C] text-white py-6 rounded-3xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-slate-800 transition">
+                                <Zap size={16}/> Strike
+                              </button>
+                              <button onClick={generateCampaignPlan} className="bg-emerald-600 text-white py-6 rounded-3xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-3 hover:bg-emerald-700 transition">
+                                <Rocket size={16}/> ✨ Plan Roadmap
+                              </button>
+                            </div>
                         </div>
                     </div>
-
                     <div className="lg:col-span-7">
                         <div className="bg-white rounded-[3rem] p-12 shadow-sm border border-slate-100 h-full flex flex-col relative overflow-hidden">
-                           <div className="absolute -bottom-20 -right-20 opacity-5 pointer-events-none"><Brain size={350} /></div>
-                           
-                           <div className="flex items-center justify-between mb-10 border-b border-slate-100 pb-6">
+                           <div className="flex items-center justify-between mb-8">
                               <div className="flex items-center gap-3">
                                  <Brain size={24} className="text-blue-600"/>
-                                 <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 italic">AI Strategic Insight Node</h3>
+                                 <h3 className="font-black text-xs uppercase tracking-widest text-slate-400 italic">Strategic Insight</h3>
                               </div>
-                              {aiAnalysis && <span className="text-[9px] font-black text-emerald-500 uppercase tracking-widest bg-emerald-50 px-3 py-1 rounded-full">Analysis Complete</span>}
+                              {aiAnalysis && (
+                                <button onClick={generateAudioBrief} className="text-blue-600 font-black text-[10px] uppercase tracking-widest flex items-center gap-2 bg-blue-50 px-4 py-2 rounded-full hover:bg-blue-100 transition">
+                                   <Volume2 size={14}/> ✨ Play Audio Brief
+                                </button>
+                              )}
                            </div>
-
-                           <div className="flex-1 relative z-10">
-                              {isAiLoading ? (
-                                <div className="h-full flex flex-col items-center justify-center gap-6 py-20">
-                                   <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                                   <div className="text-center space-y-2">
-                                      <p className="text-xs font-black uppercase tracking-[0.4em] text-blue-600 animate-pulse">Decoding Psychology...</p>
-                                      <p className="text-[10px] font-bold text-slate-400 italic">"Gemini is analyzing the imprinting potential of your message"</p>
-                                   </div>
-                                </div>
-                              ) : (
-                                <div className="prose prose-slate max-w-none">
-                                   {aiAnalysis ? (
-                                      <div className="text-slate-700 leading-relaxed text-lg italic whitespace-pre-wrap animate-in fade-in duration-1000">
-                                         {aiAnalysis}
-                                      </div>
-                                   ) : (
-                                      <div className="h-full flex flex-col items-center justify-center text-center space-y-6 py-20">
-                                         <div className="p-8 bg-slate-50 rounded-full"><Sparkles size={60} className="text-slate-200" /></div>
-                                         <div>
-                                            <p className="text-xl font-black text-slate-300 italic uppercase tracking-tighter">Awaiting Strike Command</p>
-                                            <p className="text-sm font-medium text-slate-400 italic max-w-xs mx-auto mt-2">วิเคราะห์ความฉลาดเชิงกลยุทธ์ของคุณได้ทันทีเมื่อเริ่มการ Strike</p>
-                                         </div>
-                                      </div>
-                                   )}
+                           <div className="flex-1 italic text-slate-700 text-lg whitespace-pre-wrap">
+                              {audioUrl && (
+                                <div className="mb-6 p-4 bg-emerald-50 rounded-2xl flex items-center gap-4">
+                                   <div className="w-10 h-10 bg-emerald-500 rounded-full flex items-center justify-center text-white"><Play size={20} fill="white"/></div>
+                                   <audio src={audioUrl} controls className="flex-1" />
                                 </div>
                               )}
+                              {isAiLoading ? <p className="animate-pulse">Analyzing...</p> : (aiAnalysis || "Awaiting Strike Command...")}
                            </div>
                         </div>
                     </div>
                 </div>
               </section>
+            )}
+
+            {/* VIEW: CAMPAIGN ROADMAP */}
+            {activeTab === 'campaign' && (
+               <section className="animate-in fade-in slide-in-from-right-4 duration-700 space-y-10">
+                  <h2 className="text-5xl font-black tracking-tighter text-slate-900 italic uppercase">Campaign Roadmap</h2>
+                  {campaignPlan ? (
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+                       <div className="lg:col-span-2 space-y-8">
+                          {campaignPlan.roadmap.map((phase, idx) => (
+                            <div key={idx} className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm">
+                               <h4 className="text-2xl font-black text-blue-600 mb-6 italic">{phase.phase}</h4>
+                               <ul className="space-y-4">
+                                  {phase.tasks.map((task, i) => (
+                                    <li key={i} className="flex items-center gap-4 text-slate-600 font-medium italic">
+                                       <div className="w-2 h-2 rounded-full bg-blue-400"></div>
+                                       {task}
+                                    </li>
+                                  ))}
+                               </ul>
+                            </div>
+                          ))}
+                       </div>
+                       <div className="bg-[#0D1F3C] text-white p-12 rounded-[4rem] h-fit sticky top-32">
+                          <h4 className="text-xl font-black italic mb-8 border-b border-white/10 pb-4">✨ Social Hooks</h4>
+                          <div className="space-y-6">
+                             {campaignPlan.social_hooks.map((hook, idx) => (
+                               <p key={idx} className="italic text-slate-400 leading-relaxed text-sm">"{hook}"</p>
+                             ))}
+                          </div>
+                       </div>
+                    </div>
+                  ) : (
+                    <div className="bg-slate-100 h-96 rounded-[4rem] flex flex-col items-center justify-center text-slate-400">
+                       <Rocket size={60} className="mb-4 opacity-20" />
+                       <p className="font-black text-xs uppercase tracking-widest">No Campaign Planned Yet</p>
+                    </div>
+                  )}
+               </section>
             )}
 
             {/* VIEW: DOMAINS */}
             {activeTab === 'domains' && (
               <section className="animate-in fade-in slide-in-from-bottom-4 duration-700 space-y-10">
-                 <div className="border-b border-slate-200 pb-8">
-                    <h2 className="text-4xl font-black tracking-tighter text-slate-900 italic uppercase">Domain Sovereignty</h2>
-                    <p className="text-slate-500 text-sm font-medium mt-2 italic italic">"ตรวจสอบและจัดการโครงสร้างพื้นฐานของอาณาจักร BTC Consultant"</p>
-                 </div>
+                 <h2 className="text-4xl font-black tracking-tighter text-slate-900 italic uppercase">Domain Sovereignty</h2>
                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                     <DomainCard name="master.btc-consultant.com" status="CONNECTED" target="vercel-node-01" icon={<ShieldCheck />} />
                     <DomainCard name="api.btc-consultant.com" status="ACTIVE" target="supabase-cluster-04" icon={<Database />} />
                     <DomainCard name="www.btc-consultant.com" status="MUTATED" target="landing-edge-worker" icon={<Globe />} color="text-pink-500" />
-                    <DomainCard name="9001.btc-consultant.com" status="PENDING" target="saas-iso-instance" icon={<Layers />} color="text-amber-500" />
-                    <DomainCard name="ide.btc-consultant.com" status="INACTIVE" target="neural-ide-engine" icon={<Terminal />} color="text-slate-300" />
                  </div>
               </section>
             )}
-
-            {/* VIEW: AI LAB */}
-            {activeTab === 'ai-lab' && (
-               <section className="animate-in fade-in duration-700 space-y-10">
-                  <h2 className="text-4xl font-black italic uppercase tracking-tighter">AI Strategy Lab</h2>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                     <div className="bg-slate-900 text-white p-12 rounded-[4rem] space-y-8 relative overflow-hidden group">
-                        <div className="absolute -right-20 -bottom-20 opacity-5 group-hover:rotate-12 transition-transform duration-1000"><Star size={300} /></div>
-                        <h3 className="text-3xl font-black italic leading-none">Persona <br/>Analysis Engine</h3>
-                        <p className="text-slate-400 text-sm leading-relaxed italic">"จำลองสถานการณ์ความพึงพอใจของกลุ่มลูกค้าเป้าหมาย (CEO, HR, Factory Manager) ต่อข้อเสนอปัจจุบันของคุณ"</p>
-                        <button className="bg-white text-slate-900 px-10 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-50 transition">Launch Simulation</button>
-                     </div>
-                     <div className="bg-blue-600 text-white p-12 rounded-[4rem] space-y-8 relative overflow-hidden">
-                        <h3 className="text-3xl font-black italic leading-none">Sovereign <br/>Copywriter</h3>
-                        <p className="text-blue-100 text-sm leading-relaxed italic">"สร้างชุดข้อความสะกดจิต (Embedded Commands) สำหรับ ISO 9001, 14001 และ 22301 อัตโนมัติ"</p>
-                        <button className="bg-white text-blue-600 px-10 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-50 transition">Generate Hooks</button>
-                     </div>
-                  </div>
-               </section>
-            )}
         </div>
       </main>
-
-      {/* GLOBAL TOAST */}
       <div id="master-toast" className="hidden fixed bottom-12 left-1/2 -translate-x-1/2 bg-[#0D1F3C] text-white px-12 py-6 rounded-[2.5rem] font-black text-[12px] uppercase tracking-[0.3em] shadow-3xl z-[1000] border border-white/10 animate-in slide-in-from-bottom-10"></div>
     </div>
   );
 };
-
-// --- [UI COMPONENTS] ---
 
 const NavBtn = ({ id, label, icon, active, onClick, color = "text-white" }) => (
   <button onClick={() => onClick(id)} className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl transition-all duration-300 group ${active === id ? 'bg-blue-600 text-white shadow-2xl translate-x-1' : 'text-white/50 hover:bg-white/5'}`}>
