@@ -2,15 +2,17 @@
  * B. Training Consultant (Management Engineering and Agriculture) Co., Ltd.
  * B.CJ Sovereign Master Hub - Entry Point
  * * หน้าที่: เริ่มต้นระบบ React และเชื่อมต่อ Global Styles (Tailwind)
+ * มาตรฐาน: Management Engineering & Law of UX
  */
 
-import React from 'react'
-import ReactDOM from 'react-dom/client'
-import App from './App.jsx'
-import './index.css' // ✅ นำเข้าไฟล์ CSS เพื่อให้ Tailwind ทำงานในกระบวนการ Build
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App.jsx';
+import './index.css'; // ✅ สำคัญ: ต้องมั่นใจว่ามีไฟล์ src/index.css ใน GitHub แล้ว
 
+// เริ่มต้นการเรนเดอร์ React App เข้ากับโครงสร้าง HTML (id="root")
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <App />
-  </React.StrictMode>,
-)
+  </React.StrictMode>
+);
