@@ -1,11 +1,16 @@
-/** @type {import('tailwindcss').Config} */
-export default {
-  content: [
-    "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
-  ],
-  theme: {
-    extend: {},
-  },
-  plugins: [],
-}
+/**
+ * B. Training Consultant (Management Engineering and Agriculture) Co., Ltd.
+ * B.CJ Sovereign Master Hub - Entry Point
+ * * หน้าที่: เริ่มต้นระบบ React และเชื่อมต่อ Global Styles (Tailwind)
+ */
+
+import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App.jsx'
+import './index.css' // ✅ นำเข้าไฟล์ CSS เพื่อให้ Tailwind ทำงานในกระบวนการ Build
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+)
